@@ -1,12 +1,16 @@
-const express=require('express');
-const cors=require('cors');
+const express = require('express');
+const cors = require('cors');
 require('dotenv').config();
-const app=express();
-const PORT=process.env.PORT||5000
+
+const app = express();
+const PORT = process.env.PORT || 5000;
+
 app.use(cors());
 app.use(express.json());
-const { GoogleGenerativeAI }=require("@google/generative-ai")
-const genAI=new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
+
+const { GoogleGenerativeAI } = require("@google/generative-ai");
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+
 const tickets = [
   {
     id: 1,
@@ -105,32 +109,105 @@ const tickets = [
     submittedDate: "2026-09-14"
   }
 ];
-app.get("/api/tickets",(req,res)=>{
-    const {category}=req.query
-    if(category){
-        const filtered=tickets.filter(ticket=>ticket.category===category)
-        return res.json(filtered)
-    }
-    return res.json(tickets)
-})
-app.post("/api/priority",async (req,res)=>{
-    const {ticket}=req.body
-    try{
-        const prompt=`Evaluate this ticket independently based only on its subject, description, and category; classify its priority as High, Medium, or Low, without comparing it to other tickets or inventing information. Ticket:${JSON.stringify(ticket)} Respond ONLY with valid JSON in this exact format, no other text: {"priority": "High", "reason": "one sentence here"}.`
-        const model = genAI.getGenerativeModel({ model: "gemini-3.6-flash" });
-        const result=await model.generateContent(prompt)
-        const answer=result.response.text()
-        res.json({answer})
-    }catch(error){
-        console.log(error);
-        res.status(500).json({ error: "AI service failed. Try again" })
-    }
-    
-})
 
-app.get('/',(req,res)=>{
-    res.send('Backend is running');
+function cleanedJSONResponse(data) {
+  return data
+    .replace(/```json/g, "")
+    .replace(/```/g, "")
+    .trim();
+}
+
+app.get("/api/tickets", (req, res) => {
+  const { category } = req.query;
+
+  if (category) {
+    const filtered = tickets.filter(
+      ticket => ticket.category === category
+    );
+
+    return res.json(filtered);
+  }
+
+  return res.json(tickets);
 });
-app.listen(PORT,()=>{
-    console.log(`Server running on http://localhost:${PORT}`);
+
+app.post("/api/priority", async (req, res) => {
+  const { ticket } = req.body;
+
+  try {
+    const prompt = `
+Evaluate this ticket independently based only on its subject, description, and category.
+
+Classify its priority as High, Medium, or Low.
+
+Do not compare it to other tickets.
+Do not invent information.
+
+Ticket:
+${JSON.stringify(ticket)}
+
+Respond ONLY with valid JSON in this exact format:
+{"priority": "High", "reason": "one sentence here"}
+`;
+
+    const model = genAI.getGenerativeModel({
+      model: "gemini-3.6-flash"
+    });
+
+    const result = await model.generateContent(prompt);
+    const answer = result.response.text();
+
+    const cleanedAnswer = cleanedJSONResponse(answer);
+
+    let parsed;
+
+    // First attempt
+    try {
+      parsed = JSON.parse(cleanedAnswer);
+    } catch (error) {
+      console.error("First JSON parsing attempt failed.");
+
+      // Retry
+      const retryPrompt = `
+Your previous response could not be parsed as JSON.
+
+Respond with ONLY the raw JSON object.
+Do NOT use markdown.
+Do NOT use code fences.
+Do NOT include explanations.
+Do NOT include any text before or after the JSON.
+
+Use exactly this format:
+{"priority": "High", "reason": "one sentence"}
+
+Ticket:
+${JSON.stringify(ticket)}
+`;
+
+      const retryResult = await model.generateContent(retryPrompt);
+      const retryAnswer = retryResult.response.text();
+
+      const cleanedRetryAnswer = cleanedJSONResponse(retryAnswer);
+
+      parsed = JSON.parse(cleanedRetryAnswer);
+    }
+
+    // Send successful result
+    res.json(parsed);
+
+  } catch (error) {
+    console.error("AI service error:", error);
+
+    res.status(500).json({
+      error: "AI service failed to provide valid JSON. Try again."
+    });
+  }
+});
+
+app.get("/", (req, res) => {
+  res.send("Backend is running");
+});
+
+app.listen(PORT, () => {
+  console.log(`Server running on http://localhost:${PORT}`);
 });

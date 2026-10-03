@@ -3,9 +3,11 @@ import { useState } from "react";
 function Card({ ticket }) {
   const [loading, setLoading] = useState(false);
   const [text, setText] = useState("");
+  const [error, setError] = useState("");
   const url = "http://localhost:5000/api/priority";
   async function handleGenearte() {
     setLoading(true);
+    setError("");
     try {
       const response = await fetch(url, {
         method: "POST",
@@ -19,11 +21,11 @@ function Card({ ticket }) {
         throw new Error("Server responded with an error");
       }
       const ans = await response.json();
-      const parsed = JSON.parse(ans.answer);
-      setText(parsed);
-    } catch (error) {
-      console.log(error);
-      setText("Something went wrong.Please try again");
+      setText(ans);
+    } catch (err) {
+      console.log(err);
+      setText(null);
+      setError("Failed to generate priority. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -60,11 +62,14 @@ function Card({ ticket }) {
       >
         {loading ? "Generating..." : "Generate Priority"}
       </button>
+      {error && <p className="mt-5 text-sm text-red-600">{error}</p>}
+
       {text && (
         <div className="mt-5 rounded-xl border border-blue-100 bg-blue-50 p-4">
           <h4 className="text-sm font-bold text-blue-800">
             AI Ticket Priority
           </h4>
+          
 
           <p className="mt-2 text-sm leading-6 text-gray-700">
             Priority: {text.priority}
